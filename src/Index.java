@@ -2,17 +2,9 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.SortedMap;
 import java.util.TreeMap;
 
-/**
- * Индекс по одному столбцу таблицы.
- *
- * Идея: TreeMap хранит ключи отсортированными и находит нужный ключ за O(log n),
- * поэтому не приходится просматривать всю таблицу.
- * Ключ - значение столбца, значение - первичные ключи строк с таким значением
- * (одно и то же значение столбца может встречаться в нескольких строках).
- */
+/** Индекс по одному столбцу таблицы на основе TreeMap. */
 public class Index implements Serializable {
     private static final long serialVersionUID = 1L;
 
@@ -27,7 +19,6 @@ public class Index implements Serializable {
         return name;
     }
 
-    /** Добавляет строку в индекс. NULL в индекс не попадает. */
     public void add(Object value, Object primaryKey) {
         if (value == null) {
             return;
@@ -40,7 +31,6 @@ public class Index implements Serializable {
         keys.add(primaryKey);
     }
 
-    /** Удаляет строку из индекса. */
     public void remove(Object value, Object primaryKey) {
         if (value == null) {
             return;
@@ -52,49 +42,28 @@ public class Index implements Serializable {
         }
     }
 
-    /**
-     * Возвращает первичные ключи строк, подходящих под условие "столбец operator value".
-     * Метод tailMap даёт записи от значения и выше, метод headMap даёт записи ниже значения.
-     */
     public List<Object> find(String operator, Object value) {
-        List<Object> result = new ArrayList<>();
+        Map<Object, List<Object>> part;
         switch (operator) {
             case "=":
-                addIfPresent(result, value);
-                break;
-            case ">=":
-                addAll(result, map.tailMap(value));
+                part = map.subMap(value, true, value, true);
                 break;
             case ">":
-                for (Map.Entry<Object, List<Object>> entry : map.tailMap(value).entrySet()) {
-                    if (!entry.getKey().equals(value)) { // само значение не подходит
-                        result.addAll(entry.getValue());
-                    }
-                }
+                part = map.tailMap(value, false);
+                break;
+            case ">=":
+                part = map.tailMap(value, true);
                 break;
             case "<":
-                addAll(result, map.headMap(value));
-                break;
-            case "<=":
-                addAll(result, map.headMap(value));
-                addIfPresent(result, value);
+                part = map.headMap(value, false);
                 break;
             default:
-                throw new DbException("Index does not support operator " + operator);
+                part = map.headMap(value, true);
         }
-        return result;
-    }
-
-    private void addIfPresent(List<Object> result, Object value) {
-        List<Object> keys = map.get(value);
-        if (keys != null) {
-            result.addAll(keys);
-        }
-    }
-
-    private void addAll(List<Object> result, SortedMap<Object, List<Object>> part) {
+        List<Object> result = new ArrayList<>();
         for (List<Object> keys : part.values()) {
             result.addAll(keys);
         }
+        return result;
     }
 }

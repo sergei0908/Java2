@@ -1,5 +1,5 @@
 @echo off
-rem Starts the console. To run queries from a file: run.bat demo.sql
+rem Starts the console. To run queries from a file: run.bat tests.sql
 rem Code page 866 is the standard Russian console encoding: Cyrillic works both when typing and printing.
 setlocal
 set JAVA=java

@@ -1,40 +1,32 @@
 import java.io.Serializable;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
-/**
- * Таблица: столбцы, строки и индексы.
- * Реализует Iterable (паттерн Iterator), поэтому строки можно обойти так: for (Object[] row : table)
- */
+/** Таблица: столбцы, строки и индексы. */
 public class Table implements Iterable<Object[]>, Serializable {
     private static final long serialVersionUID = 1L;
 
     private final String name;
     private final List<Column> columns;
-    private final int primaryKeyPosition;
-
-    // Строки по значению первичного ключа. Каждая строка - массив значений в порядке столбцов.
-    // LinkedHashMap запоминает порядок вставки и быстро находит строку по ключу.
+    private final int keyPosition;
     private final Map<Object, Object[]> rows = new LinkedHashMap<>();
-
-    // Индексы: имя столбца -> индекс по этому столбцу.
     private final Map<String, Index> indexes = new HashMap<>();
 
     public Table(String name, List<Column> columns) {
         this.name = name;
         this.columns = columns;
-        int position = -1;
+        int position = 0;
         for (int i = 0; i < columns.size(); i++) {
             if (columns.get(i).isPrimaryKey()) {
                 position = i;
             }
         }
-        this.primaryKeyPosition = position;
+        this.keyPosition = position;
     }
 
     public String getName() {
@@ -46,56 +38,44 @@ public class Table implements Iterable<Object[]>, Serializable {
     }
 
     public Column getPrimaryKey() {
-        return columns.get(primaryKeyPosition);
+        return columns.get(keyPosition);
     }
 
-    public int getPrimaryKeyPosition() {
-        return primaryKeyPosition;
-    }
-
-    public int getRowCount() {
-        return rows.size();
-    }
-
-    public Set<Object> getKeys() {
-        return rows.keySet();
+    public int getKeyPosition() {
+        return keyPosition;
     }
 
     public Map<String, Index> getIndexes() {
         return indexes;
     }
 
-    public boolean hasKey(Object primaryKey) {
-        return rows.containsKey(primaryKey);
+    public boolean hasKey(Object key) {
+        return rows.containsKey(key);
     }
 
-    /** Возвращает номер столбца по имени. */
     public int columnPosition(String columnName) {
         for (int i = 0; i < columns.size(); i++) {
             if (columns.get(i).getName().equals(columnName)) {
                 return i;
             }
         }
-        throw new DbException("Unknown column '" + columnName + "' in table '" + name + "'");
+        throw new IllegalArgumentException("Нет столбца '" + columnName + "' в таблице '" + name + "'");
     }
 
-    @Override
     public Iterator<Object[]> iterator() {
         return rows.values().iterator();
     }
 
-    /** Добавляет строку и обновляет индексы. */
     public void insert(Object[] row) {
-        Object key = row[primaryKeyPosition];
+        Object key = row[keyPosition];
         rows.put(key, row);
         for (Map.Entry<String, Index> entry : indexes.entrySet()) {
             entry.getValue().add(row[columnPosition(entry.getKey())], key);
         }
     }
 
-    /** Заменяет старую версию строки новой (первичный ключ у них одинаковый). */
     public void update(Object[] oldRow, Object[] newRow) {
-        Object key = oldRow[primaryKeyPosition];
+        Object key = oldRow[keyPosition];
         rows.put(key, newRow);
         for (Map.Entry<String, Index> entry : indexes.entrySet()) {
             int position = columnPosition(entry.getKey());
@@ -104,52 +84,47 @@ public class Table implements Iterable<Object[]>, Serializable {
         }
     }
 
-    /** Удаляет строку и её записи в индексах. */
     public void delete(Object[] row) {
-        Object key = row[primaryKeyPosition];
+        Object key = row[keyPosition];
         rows.remove(key);
         for (Map.Entry<String, Index> entry : indexes.entrySet()) {
             entry.getValue().remove(row[columnPosition(entry.getKey())], key);
         }
     }
 
-    /** Создаёт индекс по столбцу и заполняет его уже существующими строками. */
     public void createIndex(String indexName, String columnName) {
         int position = columnPosition(columnName);
         Index index = new Index(indexName);
         for (Object[] row : this) {
-            index.add(row[position], row[primaryKeyPosition]);
+            index.add(row[position], row[keyPosition]);
         }
         indexes.put(columnName, index);
     }
 
-    /**
-     * Находит строки, подходящие под условие. Выбирает самый быстрый способ поиска:
-     * 1) по первичному ключу, 2) через индекс, 3) просмотр всей таблицы.
-     */
-    public List<Object[]> find(Condition where) {
+    public List<Object[]> find(Query query) {
         List<Object[]> result = new ArrayList<>();
-        if (where == null) {
+        if (query.whereColumn == null) {
             result.addAll(rows.values());
             return result;
         }
-        int position = columnPosition(where.getColumn());
-        Object value = columns.get(position).convert(where.getValue());
+        int position = columnPosition(query.whereColumn);
+        Object value = columns.get(position).convert(query.whereValue);
         if (value == null) {
-            return result; // сравнение с NULL никогда не выполняется
+            return result;
         }
-        if (usesPrimaryKey(where)) {
+        String method = searchMethod(query);
+        if (method.equals("первичный ключ")) {
             Object[] row = rows.get(value);
             if (row != null) {
                 result.add(row);
             }
-        } else if (usesIndex(where)) {
-            for (Object key : indexes.get(where.getColumn()).find(where.getOperator(), value)) {
+        } else if (method.startsWith("индекс")) {
+            for (Object key : indexes.get(query.whereColumn).find(query.whereOperator, value)) {
                 result.add(rows.get(key));
             }
         } else {
             for (Object[] row : this) {
-                if (where.check(row[position], value)) {
+                if (row[position] != null && matches(compare(row[position], value), query.whereOperator)) {
                     result.add(row);
                 }
             }
@@ -157,23 +132,49 @@ public class Table implements Iterable<Object[]>, Serializable {
         return result;
     }
 
-    /** Текстовое описание способа поиска, которое выводится под результатом запроса. */
-    public String describeSearch(Condition where) {
-        if (where != null && usesPrimaryKey(where)) {
-            return "primary key";
+    public String searchMethod(Query query) {
+        if (query.whereColumn == null) {
+            return "полный просмотр";
         }
-        if (where != null && usesIndex(where)) {
-            return "index " + indexes.get(where.getColumn()).getName();
+        if (query.whereOperator.equals("=") && query.whereColumn.equals(getPrimaryKey().getName())) {
+            return "первичный ключ";
         }
-        return "full scan";
+        if (indexes.containsKey(query.whereColumn) && !query.whereOperator.equals("!=")) {
+            return "индекс " + indexes.get(query.whereColumn).getName();
+        }
+        return "полный просмотр";
     }
 
-    private boolean usesPrimaryKey(Condition where) {
-        return where.getOperator().equals("=") && where.getColumn().equals(getPrimaryKey().getName());
+    private static int compare(Object a, Object b) {
+        if (a instanceof Long) {
+            return ((Long) a).compareTo((Long) b);
+        }
+        if (a instanceof Double) {
+            return ((Double) a).compareTo((Double) b);
+        }
+        if (a instanceof String) {
+            return ((String) a).compareTo((String) b);
+        }
+        if (a instanceof LocalDate) {
+            return ((LocalDate) a).compareTo((LocalDate) b);
+        }
+        return ((Boolean) a).compareTo((Boolean) b);
     }
 
-    private boolean usesIndex(Condition where) {
-        // Для != индекс бесполезен: подходят почти все строки.
-        return indexes.containsKey(where.getColumn()) && !where.getOperator().equals("!=");
+    private static boolean matches(int result, String operator) {
+        switch (operator) {
+            case "=":
+                return result == 0;
+            case "!=":
+                return result != 0;
+            case "<":
+                return result < 0;
+            case "<=":
+                return result <= 0;
+            case ">":
+                return result > 0;
+            default:
+                return result >= 0;
+        }
     }
 }

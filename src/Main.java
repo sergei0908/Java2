@@ -3,87 +3,71 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.Scanner;
 
-/**
- * Точка входа: консоль, в которой пользователь вводит SQL-запросы.
- * Запуск без аргументов: интерактивный режим.
- * Запуск с именем файла: выполнить все запросы из файла.
- */
+/** Консоль базы данных тренажёрного зала. */
 public class Main {
-    private static final Executor executor = new Executor(new Database(new FileStorage(new File("data"))));
+    private static final char BOM = 0xFEFF;
 
-    // Сюда копим строки, пока запрос не закончится точкой с запятой.
-    private static final StringBuilder buffer = new StringBuilder();
-
-    /** Запускает программу. */
-    public static void main(String[] args) {
-        if (args.length > 0) {
-            runFile(args[0]);
+    public static void main(String[] args) throws IOException {
+        Executor executor = new Executor(new Database(new File("data")));
+        boolean fromFile = args.length > 0;
+        BufferedReader reader;
+        if (fromFile) {
+            reader = new BufferedReader(new InputStreamReader(new FileInputStream(args[0]), "UTF-8"));
         } else {
-            runConsole();
+            reader = new BufferedReader(new InputStreamReader(System.in));
+            System.out.println("GymDB. Каждый запрос заканчивается ';'. Для выхода введите exit или выход.");
         }
-    }
 
-    private static void runFile(String fileName) {
-        // Файл с запросами читаем в кодировке UTF-8, чтобы русский текст не испортился.
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(fileName), "UTF-8"))) {
-            String line = reader.readLine();
-            while (line != null) {
-                System.out.println(line);
-                handleLine(line);
-                line = reader.readLine();
-            }
-        } catch (IOException e) {
-            System.out.println("ERROR: cannot read file " + fileName + ": " + e.getMessage());
-        }
-    }
-
-    private static void runConsole() {
-        System.out.println("MiniDB. Each query ends with ';'. Type exit to quit.");
-        Scanner scanner = new Scanner(System.in);
+        StringBuilder buffer = new StringBuilder();
         while (true) {
-            System.out.print(buffer.length() == 0 ? "minidb> " : "     -> ");
-            if (!scanner.hasNextLine()) {
-                return;
+            if (!fromFile) {
+                System.out.print(buffer.length() == 0 ? "gym> " : "  -> ");
             }
-            String line = scanner.nextLine();
-            if (line.trim().equalsIgnoreCase("exit")) {
-                return;
+            String line = reader.readLine();
+            if (line == null) {
+                break;
             }
-            handleLine(line);
+            line = line.replace(String.valueOf(BOM), "").trim();
+            if (fromFile) {
+                System.out.println(line);
+            }
+            if (line.equalsIgnoreCase("exit") || line.equalsIgnoreCase("выход")) {
+                break;
+            }
+            if (line.isEmpty() || line.startsWith("--")) {
+                continue;
+            }
+            buffer.append(line).append(' ');
+            int start = 0;
+            boolean inString = false;
+            for (int i = 0; i < buffer.length(); i++) {
+                char c = buffer.charAt(i);
+                if (c == '\'') {
+                    inString = !inString;
+                } else if (c == ';' && !inString) {
+                    runQuery(executor, buffer.substring(start, i + 1));
+                    start = i + 1;
+                }
+            }
+            buffer.delete(0, start);
+            if (buffer.toString().trim().isEmpty()) {
+                buffer.setLength(0);
+            }
         }
+        reader.close();
     }
 
-    private static void handleLine(String line) {
-        String text = line.trim();
-        if (text.isEmpty() || text.startsWith("--")) {
-            return; // пустая строка или комментарий
-        }
-        buffer.append(text).append(' ');
-        if (text.endsWith(";")) {
-            String sql = buffer.toString();
-            buffer.setLength(0);
-            runQuery(sql);
-        }
-    }
-
-    private static void runQuery(String sql) {
+    private static void runQuery(Executor executor, String sql) {
         long start = System.nanoTime();
         try {
-            Result result = executor.run(sql);
-            double milliseconds = (System.nanoTime() - start) / 1000000.0;
-            if (result.isTable()) {
-                TablePrinter.print(result.getHeader(), result.getRows());
-                System.out.printf("%d row(s), %.3f ms, search: %s%n", result.getRows().size(), milliseconds, result.getSearch());
-            } else {
-                System.out.printf("%s (%.3f ms)%n", result.getMessage(), milliseconds);
-            }
-        } catch (DbException e) {
-            System.out.println("ERROR: " + e.getMessage());
+            String result = executor.run(sql);
+            System.out.println(result);
+            System.out.printf("Время: %.3f мс%n", (System.nanoTime() - start) / 1000000.0);
+        } catch (IllegalArgumentException e) {
+            System.out.println("ОШИБКА: " + e.getMessage());
         } catch (Exception e) {
-            // Аварийный выход: неожиданная ошибка не должна закрывать программу.
-            System.out.println("UNEXPECTED ERROR: " + e);
+            System.out.println("НЕОЖИДАННАЯ ОШИБКА: " + e);
         }
         System.out.println();
     }

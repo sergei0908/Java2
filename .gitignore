@@ -1,6 +1,5 @@
 out/
 data/
-test_data/
 bench_data/
 .idea/
-docs/
+Java2.iml

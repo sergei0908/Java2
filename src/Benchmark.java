@@ -1,97 +1,83 @@
 import java.io.File;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 
-/**
- * Сравнивает скорость запросов без индекса и с индексом.
- * Запуск: java -cp out Benchmark
- */
+/** Замер скорости поиска с индексом и без. */
 public class Benchmark {
     private static final String[] QUERIES = {
-            "SELECT * FROM items WHERE category = 'cat_500';", // примерно 0.1% строк
-            "SELECT * FROM items WHERE price > 99900;",        // примерно 0.1% строк
-            "SELECT * FROM items WHERE price > 99000;",        // примерно 1% строк
-            "SELECT * FROM items WHERE price < 20000;",        // примерно 20% строк
+            "SELECT * FROM visits WHERE exercise = 'ex_500';",
+            "SELECT * FROM visits WHERE weight > 999;",
+            "SELECT * FROM visits WHERE weight > 990;",
+            "SELECT * FROM visits WHERE weight < 200;",
     };
 
-    /** Запускает программу. */
     public static void main(String[] args) {
-        runTest(10000);
-        runTest(100000);
-        runTest(1000000);
+        for (int rowCount : new int[]{10000, 100000, 1000000}) {
+            runTest(rowCount);
+        }
     }
 
     private static void runTest(int rowCount) {
-        System.out.println("=== " + rowCount + " rows ===");
+        System.out.println("=== Строк: " + rowCount + " ===");
         File folder = new File("bench_data");
         deleteFolder(folder);
-        Database database = new Database(new FileStorage(folder));
-        Executor executor = new Executor(database);
-        executor.run("CREATE TABLE items (id INT PRIMARY KEY, category STRING, price DOUBLE, created DATE, active BOOLEAN);");
+        Database db = new Database(folder);
+        Executor executor = new Executor(db);
+        executor.run("CREATE TABLE visits (id INT PRIMARY KEY, exercise STRING, weight DOUBLE, day DATE, done BOOLEAN);");
 
-        // Заполняем таблицу напрямую, чтобы не сохранять файл после каждой строки.
-        Table table = database.getTable("items");
+        Table table = db.getTable("visits");
         Random random = new Random(42);
         for (long i = 0; i < rowCount; i++) {
-            table.insert(new Object[]{
-                    i,
-                    "cat_" + random.nextInt(1000),
-                    random.nextInt(10000000) / 100.0,
-                    LocalDate.of(2020, 1, 1).plusDays(random.nextInt(1500)),
-                    random.nextBoolean()
-            });
+            table.insert(new Object[]{i, "ex_" + random.nextInt(1000), random.nextInt(100000) / 100.0,
+                    LocalDate.of(2020, 1, 1).plusDays(random.nextInt(1500)), random.nextBoolean()});
         }
 
-        // Замеры без индекса.
         long start = System.nanoTime();
-        database.save(table);
-        System.out.printf("save table: %.0f ms%n", millisecondsSince(start));
-        List<Double> withoutIndex = new ArrayList<>();
-        List<Integer> sizes = new ArrayList<>();
-        for (String sql : QUERIES) {
-            withoutIndex.add(measure(executor, sql));
-            sizes.add(executor.run(sql).getRows().size());
-        }
+        db.save(table);
+        System.out.printf("сохранение таблицы: %.0f мс%n", since(start));
 
-        // Создаём индексы (время включает сохранение таблицы на диск).
-        start = System.nanoTime();
-        executor.run("CREATE INDEX idx_category ON items (category);");
-        System.out.printf("create index on category: %.0f ms%n", millisecondsSince(start));
-        start = System.nanoTime();
-        executor.run("CREATE INDEX idx_price ON items (price);");
-        System.out.printf("create index on price: %.0f ms%n", millisecondsSince(start));
-
-        // Замеры с индексом. Число найденных строк обязано совпасть.
+        double[] withoutIndex = new double[QUERIES.length];
+        int[] sizes = new int[QUERIES.length];
         for (int i = 0; i < QUERIES.length; i++) {
-            double withIndex = measure(executor, QUERIES[i]);
-            Result result = executor.run(QUERIES[i]);
-            if (result.getRows().size() != sizes.get(i)) {
-                throw new IllegalStateException("Index gave a different result: " + QUERIES[i]);
-            }
-            System.out.printf("%s | rows: %d | no index: %.3f ms | index: %.3f ms | search: %s%n",
-                    QUERIES[i], sizes.get(i), withoutIndex.get(i), withIndex, result.getSearch());
+            withoutIndex[i] = measure(table, QUERIES[i]);
+            sizes[i] = table.find(Parser.parse(QUERIES[i])).size();
         }
 
-        // Загрузка с диска, как при запуске программы.
         start = System.nanoTime();
-        new Database(new FileStorage(folder));
-        System.out.printf("load from disk: %.0f ms%n", millisecondsSince(start));
-        File file = new File(folder, "items.tbl");
-        System.out.printf("file size: %.1f MB%n%n", file.length() / 1024.0 / 1024.0);
+        executor.run("CREATE INDEX idx_exercise ON visits (exercise);");
+        System.out.printf("индекс по exercise: %.0f мс%n", since(start));
+        start = System.nanoTime();
+        executor.run("CREATE INDEX idx_weight ON visits (weight);");
+        System.out.printf("индекс по weight: %.0f мс%n", since(start));
+
+        for (int i = 0; i < QUERIES.length; i++) {
+            double withIndex = measure(table, QUERIES[i]);
+            Query query = Parser.parse(QUERIES[i]);
+            List<Object[]> found = table.find(query);
+            if (found.size() != sizes[i]) {
+                throw new IllegalStateException("С индексом получен другой результат: " + QUERIES[i]);
+            }
+            System.out.printf("%s | строк: %d | без индекса: %.3f мс | с индексом: %.3f мс | %s%n",
+                    QUERIES[i], sizes[i], withoutIndex[i], withIndex, table.searchMethod(query));
+        }
+
+        start = System.nanoTime();
+        new Database(folder);
+        System.out.printf("загрузка с диска: %.0f мс%n", since(start));
+        System.out.printf("размер файла: %.1f МБ%n%n", new File(folder, "visits.tbl").length() / 1024.0 / 1024.0);
         deleteFolder(folder);
     }
 
-    // Выполняет запрос 25 раз: первые 5 для разогрева Java, по остальным берём медиану.
-    private static double measure(Executor executor, String sql) {
+    private static double measure(Table table, String sql) {
+        Query query = Parser.parse(sql);
         double[] times = new double[20];
         for (int i = -5; i < times.length; i++) {
             long start = System.nanoTime();
-            executor.run(sql);
+            table.find(query);
             if (i >= 0) {
-                times[i] = millisecondsSince(start);
+                times[i] = since(start);
             }
         }
         Arrays.sort(times);
@@ -108,7 +94,7 @@ public class Benchmark {
         folder.delete();
     }
 
-    private static double millisecondsSince(long start) {
+    private static double since(long start) {
         return (System.nanoTime() - start) / 1000000.0;
     }
 }

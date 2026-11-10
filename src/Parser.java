@@ -2,35 +2,25 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-/**
- * Превращает текст SQL-запроса в объект Query.
- * Работает в два шага:
- * 1) разбивает текст на слова (токены): SELECT, *, FROM, cars ...
- * 2) читает токены по порядку и заполняет Query.
- */
+/** Разбор текста SQL-запроса в объект Query. */
 public class Parser {
     private final List<String> tokens;
-    private int position = 0; // номер токена, который читаем сейчас
+    private int position = 0;
 
     private Parser(List<String> tokens) {
         this.tokens = tokens;
     }
 
-    /** Разбирает текст запроса и возвращает объект Query. */
     public static Query parse(String sql) {
         Parser parser = new Parser(tokenize(sql));
         Query query = parser.parseCommand();
-        parser.accept(";"); // точка с запятой в конце необязательна
-        if (!parser.isEnd()) {
-            throw new DbException("Unexpected text in query: " + parser.peek());
+        parser.accept(";");
+        if (parser.position < parser.tokens.size()) {
+            throw new IllegalArgumentException("Лишний текст в запросе: " + parser.peek());
         }
         return query;
     }
 
-    // ---------- Шаг 1: разбиение текста на токены ----------
-
-    // Строковые значения сохраняем с кавычкой в начале ('BMW),
-    // чтобы потом отличить строку 'BMW' от имени столбца BMW.
     private static List<String> tokenize(String sql) {
         List<String> result = new ArrayList<>();
         int i = 0;
@@ -39,12 +29,11 @@ public class Parser {
             if (Character.isWhitespace(c)) {
                 i++;
             } else if (c == '\'') {
-                // Строка в кавычках. Две кавычки подряд означают одну кавычку: 'O''Brien'
                 StringBuilder text = new StringBuilder("'");
                 i++;
                 while (true) {
                     if (i >= sql.length()) {
-                        throw new DbException("String is not closed: missing '");
+                        throw new IllegalArgumentException("Строка не закрыта: не хватает '");
                     }
                     if (sql.charAt(i) != '\'') {
                         text.append(sql.charAt(i));
@@ -59,7 +48,6 @@ public class Parser {
                 }
                 result.add(text.toString());
             } else if (isWordChar(c) || c == '-') {
-                // Слово или число (минус может стоять только в начале числа)
                 int start = i;
                 i++;
                 while (i < sql.length() && isWordChar(sql.charAt(i))) {
@@ -74,7 +62,7 @@ public class Parser {
                 result.add(String.valueOf(c));
                 i++;
             } else {
-                throw new DbException("Unexpected character: " + c);
+                throw new IllegalArgumentException("Недопустимый символ: " + c);
             }
         }
         return result;
@@ -83,8 +71,6 @@ public class Parser {
     private static boolean isWordChar(char c) {
         return Character.isLetterOrDigit(c) || c == '_' || c == '.';
     }
-
-    // ---------- Шаг 2: разбор команд ----------
 
     private Query parseCommand() {
         String word = next().toUpperCase();
@@ -107,31 +93,27 @@ public class Parser {
                 expect("TABLE");
                 return parseDropTable();
             default:
-                throw new DbException("Unknown command: " + word);
+                throw new IllegalArgumentException("Неизвестная команда: " + word);
         }
     }
 
-    // SELECT * FROM cars WHERE price > 20000
-    // SELECT brand, price FROM cars
     private Query parseSelect() {
         Query query = new Query("SELECT");
         if (!accept("*")) {
-            query.setColumns(parseNameList());
+            query.columns = parseNameList();
         }
         expect("FROM");
-        query.setTable(parseName());
-        query.setWhere(parseWhere());
+        query.table = parseName();
+        parseWhere(query);
         return query;
     }
 
-    // INSERT INTO cars VALUES (1, 'Toyota', 25000.0, TRUE), (2, 'BMW', 30000.0, FALSE)
-    // INSERT INTO cars (id, brand) VALUES (2, 'BMW')
     private Query parseInsert() {
         Query query = new Query("INSERT");
         expect("INTO");
-        query.setTable(parseName());
+        query.table = parseName();
         if (accept("(")) {
-            query.setColumns(parseNameList());
+            query.columns = parseNameList();
             expect(")");
         }
         expect("VALUES");
@@ -142,117 +124,99 @@ public class Parser {
                 values.add(parseValue());
             } while (accept(","));
             expect(")");
-            query.getRows().add(values);
+            query.rows.add(values);
         } while (accept(","));
         return query;
     }
 
-    // UPDATE cars SET price = 30000, brand = 'Audi' WHERE id = 2
     private Query parseUpdate() {
         Query query = new Query("UPDATE");
-        query.setTable(parseName());
+        query.table = parseName();
         expect("SET");
-        List<String> columns = new ArrayList<>();
+        query.columns = new ArrayList<>();
         do {
-            columns.add(parseName());
+            query.columns.add(parseName());
             expect("=");
-            query.getNewValues().add(parseValue());
+            query.newValues.add(parseValue());
         } while (accept(","));
-        query.setColumns(columns);
-        query.setWhere(parseWhere());
+        parseWhere(query);
         return query;
     }
 
-    // DELETE FROM cars WHERE brand = 'Toyota'
     private Query parseDelete() {
         Query query = new Query("DELETE");
         expect("FROM");
-        query.setTable(parseName());
-        query.setWhere(parseWhere());
+        query.table = parseName();
+        parseWhere(query);
         return query;
     }
 
-    // CREATE TABLE sales (id INT PRIMARY KEY, car_id INT REFERENCES cars(id), sold DATE)
     private Query parseCreateTable() {
-        Query query = new Query("CREATE_TABLE");
-        query.setTable(parseName());
+        Query query = new Query("CREATE TABLE");
+        query.table = parseName();
         expect("(");
         do {
-            query.getNewColumns().add(parseColumn());
+            String name = parseName();
+            String type = next().toUpperCase();
+            if (!Column.TYPES.contains(type)) {
+                throw new IllegalArgumentException("Неизвестный тип: " + type + ". Доступны " + Column.TYPES);
+            }
+            boolean primaryKey = false;
+            String refTable = null;
+            String refColumn = null;
+            if (accept("PRIMARY")) {
+                expect("KEY");
+                primaryKey = true;
+            }
+            if (accept("REFERENCES")) {
+                refTable = parseName();
+                expect("(");
+                refColumn = parseName();
+                expect(")");
+            }
+            query.newColumns.add(new Column(name, type, primaryKey, refTable, refColumn));
         } while (accept(","));
         expect(")");
         return query;
     }
 
-    private Column parseColumn() {
-        String name = parseName();
-        DataType type = parseType();
-        boolean primaryKey = false;
-        String refTable = null;
-        String refColumn = null;
-        if (accept("PRIMARY")) {
-            expect("KEY");
-            primaryKey = true;
-        }
-        if (accept("REFERENCES")) {
-            refTable = parseName();
-            expect("(");
-            refColumn = parseName();
-            expect(")");
-        }
-        return new Column(name, type, primaryKey, refTable, refColumn);
-    }
-
-    private DataType parseType() {
-        String word = next().toUpperCase();
-        try {
-            return DataType.valueOf(word);
-        } catch (IllegalArgumentException e) {
-            throw new DbException("Unknown type: " + word + ". Use INT, DOUBLE, STRING, DATE or BOOLEAN");
-        }
-    }
-
-    // DROP TABLE cars
-    // DROP TABLE IF EXISTS cars
     private Query parseDropTable() {
-        Query query = new Query("DROP_TABLE");
+        Query query = new Query("DROP TABLE");
         if (accept("IF")) {
             expect("EXISTS");
-            query.setIfExists(true);
+            query.ifExists = true;
         }
-        query.setTable(parseName());
+        query.table = parseName();
         return query;
     }
 
-    // CREATE INDEX idx_cars_brand ON cars (brand)
     private Query parseCreateIndex() {
-        Query query = new Query("CREATE_INDEX");
-        query.setIndexName(parseName());
+        Query query = new Query("CREATE INDEX");
+        query.indexName = parseName();
         expect("ON");
-        query.setTable(parseName());
+        query.table = parseName();
         expect("(");
-        query.setIndexColumn(parseName());
+        query.indexColumn = parseName();
         expect(")");
         return query;
     }
 
-    // Необязательная часть: WHERE столбец оператор значение
-    private Condition parseWhere() {
+    private void parseWhere(Query query) {
         if (!accept("WHERE")) {
-            return null;
+            return;
         }
-        String column = parseName();
+        query.whereColumn = parseName();
         String operator = next();
         if (operator.equals("<>")) {
-            operator = "!="; // это два обозначения одного и того же
+            operator = "!=";
         }
         if (!Arrays.asList("=", "!=", "<", "<=", ">", ">=").contains(operator)) {
-            throw new DbException("Unknown operator: " + operator);
+            throw new IllegalArgumentException("Неизвестный оператор: " + operator);
         }
-        return new Condition(column, operator, parseValue());
+        query.whereOperator = operator;
+        query.whereValue = parseValue();
     }
 
-    // Читает имена через запятую: id, brand, price
     private List<String> parseNameList() {
         List<String> names = new ArrayList<>();
         do {
@@ -261,28 +225,24 @@ public class Parser {
         return names;
     }
 
-    // Читает имя таблицы или столбца и приводит его к нижнему регистру.
     private String parseName() {
         String name = next().toLowerCase();
-        // Имя состоит из букв, цифр и _, а начинается не с цифры.
         boolean valid = !Character.isDigit(name.charAt(0));
-        for (int i = 0; i < name.length(); i++) {
-            char c = name.charAt(i);
+        for (char c : name.toCharArray()) {
             if (!Character.isLetterOrDigit(c) && c != '_') {
                 valid = false;
             }
         }
         if (!valid) {
-            throw new DbException("Invalid name: " + name);
+            throw new IllegalArgumentException("Недопустимое имя: " + name);
         }
         return name;
     }
 
-    // Читает значение: строку, TRUE, FALSE, NULL или число.
     private Object parseValue() {
         String token = next();
         if (token.startsWith("'")) {
-            return token.substring(1); // убираем служебную кавычку
+            return token.substring(1);
         }
         if (token.equalsIgnoreCase("TRUE")) {
             return Boolean.TRUE;
@@ -299,28 +259,21 @@ public class Parser {
             }
             return Long.parseLong(token);
         } catch (NumberFormatException e) {
-            throw new DbException("Invalid value: " + token);
+            throw new IllegalArgumentException("Недопустимое значение: " + token);
         }
     }
 
-    // ---------- Вспомогательные методы для чтения токенов ----------
-
-    private boolean isEnd() {
-        return position >= tokens.size();
-    }
-
     private String peek() {
-        return isEnd() ? "" : tokens.get(position);
+        return position < tokens.size() ? tokens.get(position) : "";
     }
 
     private String next() {
-        if (isEnd()) {
-            throw new DbException("Query ended unexpectedly");
+        if (position >= tokens.size()) {
+            throw new IllegalArgumentException("Запрос неожиданно закончился");
         }
         return tokens.get(position++);
     }
 
-    // Если следующий токен равен word, пропускает его и возвращает true.
     private boolean accept(String word) {
         if (peek().equalsIgnoreCase(word)) {
             position++;
@@ -329,10 +282,10 @@ public class Parser {
         return false;
     }
 
-    // Следующий токен обязан быть равен word, иначе это ошибка.
     private void expect(String word) {
         if (!accept(word)) {
-            throw new DbException("Expected " + word + " but found: " + (isEnd() ? "end of query" : peek()));
+            String found = position < tokens.size() ? peek() : "конец запроса";
+            throw new IllegalArgumentException("Ожидалось " + word + ", а найдено: " + found);
         }
     }
 }

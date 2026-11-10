@@ -3,11 +3,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * Выполняет запросы.
- * Правило для всех изменений: сначала проверяем все данные, и только потом меняем таблицу.
- * Поэтому при ошибке таблица остаётся такой же, какой была.
- */
+/** Выполнение запросов и вывод результата в виде таблицы. */
 public class Executor {
     private final Database db;
 
@@ -15,10 +11,9 @@ public class Executor {
         this.db = db;
     }
 
-    /** Разбирает и выполняет запрос. */
-    public Result run(String sql) {
+    public String run(String sql) {
         Query query = Parser.parse(sql);
-        switch (query.getCommand()) {
+        switch (query.command) {
             case "SELECT":
                 return select(query);
             case "INSERT":
@@ -27,20 +22,18 @@ public class Executor {
                 return update(query);
             case "DELETE":
                 return delete(query);
-            case "CREATE_TABLE":
+            case "CREATE TABLE":
                 return createTable(query);
-            case "DROP_TABLE":
+            case "DROP TABLE":
                 return dropTable(query);
-            default: // CREATE_INDEX
+            default:
                 return createIndex(query);
         }
     }
 
-    private Result select(Query query) {
-        Table table = db.getTable(query.getTable());
-
-        // Какие столбцы выводить: для * берём все.
-        List<String> names = query.getColumns();
+    private String select(Query query) {
+        Table table = db.getTable(query.table);
+        List<String> names = query.columns;
         if (names == null) {
             names = new ArrayList<>();
             for (Column column : table.getColumns()) {
@@ -52,65 +45,64 @@ public class Executor {
             positions[i] = table.columnPosition(names.get(i));
         }
 
-        // Из каждой найденной строки оставляем только нужные столбцы.
         List<Object[]> output = new ArrayList<>();
-        for (Object[] row : table.find(query.getWhere())) {
+        for (Object[] row : table.find(query)) {
             Object[] outputRow = new Object[positions.length];
             for (int i = 0; i < positions.length; i++) {
                 outputRow[i] = row[positions[i]];
             }
             output.add(outputRow);
         }
-        return new Result(names, output, table.describeSearch(query.getWhere()));
+        return formatTable(names, output) + "Строк: " + output.size() + ", поиск: " + table.searchMethod(query);
     }
 
-    private Result insert(Query query) {
-        Table table = db.getTable(query.getTable());
+    private String insert(Query query) {
+        Table table = db.getTable(query.table);
         List<Column> columns = table.getColumns();
+        int expected = query.columns == null ? columns.size() : query.columns.size();
 
-        // Шаг 1: собираем новые строки и проверяем их.
         List<Object[]> newRows = new ArrayList<>();
         Set<Object> newKeys = new HashSet<>();
-        for (List<Object> values : query.getRows()) {
-            int expected = query.getColumns() == null ? columns.size() : query.getColumns().size();
+        for (List<Object> values : query.rows) {
             if (values.size() != expected) {
-                throw new DbException("Expected " + expected + " value(s) but got " + values.size());
+                throw new IllegalArgumentException("Ожидалось значений: " + expected + ", получено: " + values.size());
             }
-            Object[] row = new Object[columns.size()]; // столбцы без значения останутся NULL
+            Object[] row = new Object[columns.size()];
             for (int i = 0; i < values.size(); i++) {
-                int position = query.getColumns() == null ? i : table.columnPosition(query.getColumns().get(i));
+                int position = query.columns == null ? i : table.columnPosition(query.columns.get(i));
                 row[position] = columns.get(position).convert(values.get(i));
             }
-            checkPrimaryKey(table, row, newKeys);
+            Object key = row[table.getKeyPosition()];
+            if (key == null) {
+                throw new IllegalArgumentException("Первичный ключ не может быть NULL");
+            }
+            if (table.hasKey(key) || !newKeys.add(key)) {
+                throw new IllegalArgumentException("Первичный ключ повторяется: " + key);
+            }
             checkForeignKeys(table, row);
             newRows.add(row);
         }
 
-        // Шаг 2: все проверки пройдены, вставляем и сохраняем на диск.
         for (Object[] row : newRows) {
             table.insert(row);
         }
         db.save(table);
-        return new Result(newRows.size() + " row(s) inserted");
+        return "Вставлено строк: " + newRows.size();
     }
 
-    private Result update(Query query) {
-        Table table = db.getTable(query.getTable());
-        List<Column> columns = table.getColumns();
-
-        // Шаг 1: находим номера столбцов и приводим новые значения к их типам.
-        int[] positions = new int[query.getColumns().size()];
+    private String update(Query query) {
+        Table table = db.getTable(query.table);
+        int[] positions = new int[query.columns.size()];
         Object[] values = new Object[positions.length];
         for (int i = 0; i < positions.length; i++) {
-            positions[i] = table.columnPosition(query.getColumns().get(i));
-            if (positions[i] == table.getPrimaryKeyPosition()) {
-                throw new DbException("Primary key cannot be changed");
+            positions[i] = table.columnPosition(query.columns.get(i));
+            if (positions[i] == table.getKeyPosition()) {
+                throw new IllegalArgumentException("Первичный ключ нельзя изменить");
             }
-            values[i] = columns.get(positions[i]).convert(query.getNewValues().get(i));
+            values[i] = table.getColumns().get(positions[i]).convert(query.newValues.get(i));
         }
 
-        // Шаг 2: готовим новые версии строк и проверяем их.
-        List<Object[]> oldRows = table.find(query.getWhere());
+        List<Object[]> oldRows = table.find(query);
         List<Object[]> newRows = new ArrayList<>();
         for (Object[] oldRow : oldRows) {
             Object[] newRow = oldRow.clone();
@@ -121,17 +113,16 @@ public class Executor {
             newRows.add(newRow);
         }
 
-        // Шаг 3: применяем изменения и сохраняем на диск.
         for (int i = 0; i < oldRows.size(); i++) {
             table.update(oldRows.get(i), newRows.get(i));
         }
         db.save(table);
-        return new Result(oldRows.size() + " row(s) updated");
+        return "Обновлено строк: " + oldRows.size();
     }
 
-    private Result delete(Query query) {
-        Table table = db.getTable(query.getTable());
-        List<Object[]> rows = table.find(query.getWhere());
+    private String delete(Query query) {
+        Table table = db.getTable(query.table);
+        List<Object[]> rows = table.find(query);
         for (Object[] row : rows) {
             checkNotReferenced(table, row);
         }
@@ -139,103 +130,91 @@ public class Executor {
             table.delete(row);
         }
         db.save(table);
-        return new Result(rows.size() + " row(s) deleted");
+        return "Удалено строк: " + rows.size();
     }
 
-    private Result createTable(Query query) {
-        if (db.hasTable(query.getTable())) {
-            throw new DbException("Table '" + query.getTable() + "' already exists");
+    private String createTable(Query query) {
+        if (db.hasTable(query.table)) {
+            throw new IllegalArgumentException("Таблица '" + query.table + "' уже существует");
         }
         int primaryKeys = 0;
         Set<String> names = new HashSet<>();
-        for (Column column : query.getNewColumns()) {
+        for (Column column : query.newColumns) {
             if (!names.add(column.getName())) {
-                throw new DbException("Duplicate column '" + column.getName() + "'");
+                throw new IllegalArgumentException("Столбец '" + column.getName() + "' повторяется");
             }
             if (column.isPrimaryKey()) {
                 primaryKeys++;
             }
             if (column.getRefTable() != null) {
-                checkReference(column);
+                Column parentKey = db.getTable(column.getRefTable()).getPrimaryKey();
+                if (!parentKey.getName().equals(column.getRefColumn()) || !parentKey.getType().equals(column.getType())) {
+                    throw new IllegalArgumentException("REFERENCES должен указывать на первичный ключ "
+                            + column.getRefTable() + " того же типа");
+                }
             }
         }
         if (primaryKeys != 1) {
-            throw new DbException("Table must have exactly one PRIMARY KEY column");
+            throw new IllegalArgumentException("В таблице должен быть ровно один столбец PRIMARY KEY");
         }
-        db.addTable(new Table(query.getTable(), query.getNewColumns()));
-        return new Result("Table '" + query.getTable() + "' created");
+        db.addTable(new Table(query.table, query.newColumns));
+        return "Таблица '" + query.table + "' создана";
     }
 
-    private Result dropTable(Query query) {
-        if (query.isIfExists() && !db.hasTable(query.getTable())) {
-            return new Result("Table '" + query.getTable() + "' does not exist, skipped");
+    private String dropTable(Query query) {
+        if (query.ifExists && !db.hasTable(query.table)) {
+            return "Таблицы '" + query.table + "' нет, пропущено";
         }
-        Table table = db.getTable(query.getTable());
-
-        // Нельзя удалить таблицу, на которую ссылается другая таблица.
+        db.getTable(query.table);
         for (Table other : db.getTables()) {
             for (Column column : other.getColumns()) {
-                if (table.getName().equals(column.getRefTable())) {
-                    throw new DbException("Table is referenced by " + other.getName() + "." + column.getName());
+                if (query.table.equals(column.getRefTable())) {
+                    throw new IllegalArgumentException("На таблицу ссылается столбец " + other.getName() + "." + column.getName());
                 }
             }
         }
-        db.removeTable(query.getTable());
-        return new Result("Table '" + query.getTable() + "' dropped");
+        db.removeTable(query.table);
+        return "Таблица '" + query.table + "' удалена";
     }
 
-    private Result createIndex(Query query) {
-        Table table = db.getTable(query.getTable());
+    private String createIndex(Query query) {
+        Table table = db.getTable(query.table);
         for (Table other : db.getTables()) {
             for (Index index : other.getIndexes().values()) {
-                if (index.getName().equals(query.getIndexName())) {
-                    throw new DbException("Index '" + query.getIndexName() + "' already exists");
+                if (index.getName().equals(query.indexName)) {
+                    throw new IllegalArgumentException("Индекс '" + query.indexName + "' уже существует");
                 }
             }
         }
-        if (table.getIndexes().containsKey(query.getIndexColumn())) {
-            throw new DbException("Column '" + query.getIndexColumn() + "' already has an index");
+        if (table.getIndexes().containsKey(query.indexColumn)) {
+            throw new IllegalArgumentException("У столбца '" + query.indexColumn + "' уже есть индекс");
         }
-        table.createIndex(query.getIndexName(), query.getIndexColumn());
+        table.createIndex(query.indexName, query.indexColumn);
         db.save(table);
-        return new Result("Index '" + query.getIndexName() + "' created");
+        return "Индекс '" + query.indexName + "' создан";
     }
 
-    // ---------- Проверки ----------
-
-    // Первичный ключ не должен быть NULL и не должен повторяться.
-    private void checkPrimaryKey(Table table, Object[] row, Set<Object> newKeys) {
-        Object key = row[table.getPrimaryKeyPosition()];
-        if (key == null) {
-            throw new DbException("Primary key cannot be NULL");
-        }
-        if (table.hasKey(key) || !newKeys.add(key)) {
-            throw new DbException("Duplicate primary key: " + key);
-        }
-    }
-
-    // Значение внешнего ключа должно существовать в родительской таблице.
     private void checkForeignKeys(Table table, Object[] row) {
         List<Column> columns = table.getColumns();
         for (int i = 0; i < columns.size(); i++) {
             Column column = columns.get(i);
             if (column.getRefTable() != null && row[i] != null && !db.getTable(column.getRefTable()).hasKey(row[i])) {
-                throw new DbException("Value " + row[i] + " of " + column.getName()
-                        + " does not exist in table " + column.getRefTable());
+                throw new IllegalArgumentException("Значения " + row[i] + " столбца " + column.getName()
+                        + " нет в таблице " + column.getRefTable());
             }
         }
     }
 
-    // Нельзя удалить строку, на которую ссылаются строки другой таблицы.
     private void checkNotReferenced(Table table, Object[] row) {
-        Object key = row[table.getPrimaryKeyPosition()];
+        Object key = row[table.getKeyPosition()];
         for (Table other : db.getTables()) {
             List<Column> columns = other.getColumns();
             for (int i = 0; i < columns.size(); i++) {
                 if (table.getName().equals(columns.get(i).getRefTable())) {
                     for (Object[] otherRow : other) {
                         if (key.equals(otherRow[i])) {
-                            throw new DbException("Row with key " + key + " is used in table " + other.getName());
+                            throw new IllegalArgumentException("Строка с ключом " + key
+                                    + " используется в таблице " + other.getName());
                         }
                     }
                 }
@@ -243,14 +222,48 @@ public class Executor {
         }
     }
 
-    // REFERENCES должен указывать на первичный ключ существующей таблицы того же типа.
-    private void checkReference(Column column) {
-        Column parentKey = db.getTable(column.getRefTable()).getPrimaryKey();
-        if (!parentKey.getName().equals(column.getRefColumn())) {
-            throw new DbException("REFERENCES must point to the primary key of " + column.getRefTable());
+    private static String formatTable(List<String> header, List<Object[]> rows) {
+        int[] widths = new int[header.size()];
+        for (int i = 0; i < widths.length; i++) {
+            widths[i] = header.get(i).length();
+            for (Object[] row : rows) {
+                widths[i] = Math.max(widths[i], text(row[i]).length());
+            }
         }
-        if (parentKey.getType() != column.getType()) {
-            throw new DbException("Column '" + column.getName() + "' must have type " + parentKey.getType());
+        StringBuilder line = new StringBuilder("+");
+        for (int width : widths) {
+            for (int i = 0; i < width + 2; i++) {
+                line.append('-');
+            }
+            line.append('+');
         }
+        line.append('\n');
+
+        StringBuilder result = new StringBuilder();
+        result.append(line);
+        appendRow(result, header.toArray(), widths);
+        result.append(line);
+        for (Object[] row : rows) {
+            appendRow(result, row, widths);
+        }
+        result.append(line);
+        return result.toString();
+    }
+
+    private static void appendRow(StringBuilder result, Object[] values, int[] widths) {
+        result.append('|');
+        for (int i = 0; i < values.length; i++) {
+            String text = text(values[i]);
+            result.append(' ').append(text);
+            for (int j = text.length(); j < widths[i] + 1; j++) {
+                result.append(' ');
+            }
+            result.append('|');
+        }
+        result.append('\n');
+    }
+
+    private static String text(Object value) {
+        return value == null ? "NULL" : value.toString();
     }
 }

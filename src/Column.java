@@ -1,18 +1,22 @@
 import java.io.Serializable;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.Arrays;
+import java.util.List;
 
-/** Описание одного столбца таблицы. */
+/** Столбец таблицы. */
 public class Column implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    private final String name;
-    private final DataType type;
-    private final boolean primaryKey;
-    private final String refTable;   // на какую таблицу ссылается столбец (null, если внешнего ключа нет)
-    private final String refColumn;  // на какой столбец этой таблицы он ссылается
+    public static final List<String> TYPES = Arrays.asList("INT", "DOUBLE", "STRING", "DATE", "BOOLEAN");
 
-    public Column(String name, DataType type, boolean primaryKey, String refTable, String refColumn) {
+    private final String name;
+    private final String type;
+    private final boolean primaryKey;
+    private final String refTable;
+    private final String refColumn;
+
+    public Column(String name, String type, boolean primaryKey, String refTable, String refColumn) {
         this.name = name;
         this.type = type;
         this.primaryKey = primaryKey;
@@ -24,7 +28,7 @@ public class Column implements Serializable {
         return name;
     }
 
-    public DataType getType() {
+    public String getType() {
         return type;
     }
 
@@ -40,48 +44,43 @@ public class Column implements Serializable {
         return refColumn;
     }
 
-    /**
-     * Приводит значение из запроса к типу столбца.
-     * Если значение не подходит, выбрасывает исключение.
-     */
     public Object convert(Object value) {
         if (value == null) {
             return null;
         }
         switch (type) {
-            case INT:
+            case "INT":
                 if (value instanceof Long) {
                     return value;
                 }
                 break;
-            case DOUBLE:
+            case "DOUBLE":
                 if (value instanceof Double) {
                     return value;
                 }
                 if (value instanceof Long) {
-                    return ((Long) value).doubleValue(); // 30000 превращается в 30000.0
+                    return ((Long) value).doubleValue();
                 }
                 break;
-            case STRING:
+            case "STRING":
                 if (value instanceof String) {
                     return value;
                 }
                 break;
-            case DATE:
+            case "DATE":
                 if (value instanceof String) {
                     try {
                         return LocalDate.parse((String) value);
                     } catch (DateTimeParseException e) {
-                        throw new DbException("Invalid date '" + value + "', expected YYYY-MM-DD");
+                        throw new IllegalArgumentException("Неверная дата '" + value + "', нужен формат ГГГГ-ММ-ДД");
                     }
                 }
                 break;
-            case BOOLEAN:
+            default:
                 if (value instanceof Boolean) {
                     return value;
                 }
-                break;
         }
-        throw new DbException("Value " + value + " does not fit column '" + name + "' of type " + type);
+        throw new IllegalArgumentException("Значение " + value + " не подходит столбцу '" + name + "' типа " + type);
     }
 }
