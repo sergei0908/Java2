@@ -1,7 +1,7 @@
 -- Тесты GymDB: тренажёрный зал
 -- Таблицы: trainers (тренеры), clients (клиенты), programs (программы тренировок)
 -- У тренера есть клиенты (clients.trainer_id), у клиента есть программы тренировок (programs.client_id)
--- Запуск: run.bat tests.sql или конфигурация "Main tests.sql" в IntelliJ
+-- Запуск: run.bat tests.sql (в IntelliJ: класс Main с аргументом tests.sql)
 -- Внимание: в начале таблицы удаляются и создаются заново
 
 DROP TABLE IF EXISTS programs;

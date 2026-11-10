@@ -15,7 +15,7 @@ public class Executor {
     /** Выполняет запрос и возвращает ответ в виде текста */
     public String run(String sql) {
         Query query = Parser.parse(sql);
-        switch (query.command) {
+        switch (query.getCommand()) {
             case "SELECT":
                 return select(query);
             case "INSERT":
@@ -34,8 +34,8 @@ public class Executor {
     }
 
     private String select(Query query) {
-        Table table = db.getTable(query.table);
-        List<String> names = query.columns;
+        Table table = db.getTable(query.getTable());
+        List<String> names = query.getColumns();
         if (names == null) {
             names = new ArrayList<>();
             for (Column column : table.getColumns()) {
@@ -59,19 +59,19 @@ public class Executor {
     }
 
     private String insert(Query query) {
-        Table table = db.getTable(query.table);
+        Table table = db.getTable(query.getTable());
         List<Column> columns = table.getColumns();
-        int expected = query.columns == null ? columns.size() : query.columns.size();
+        int expected = query.getColumns() == null ? columns.size() : query.getColumns().size();
 
         List<Object[]> newRows = new ArrayList<>();
         Set<Object> newKeys = new HashSet<>();
-        for (List<Object> values : query.rows) {
+        for (List<Object> values : query.getRows()) {
             if (values.size() != expected) {
                 throw new IllegalArgumentException("Ожидалось значений: " + expected + ", получено: " + values.size());
             }
             Object[] row = new Object[columns.size()];
             for (int i = 0; i < values.size(); i++) {
-                int position = query.columns == null ? i : table.columnPosition(query.columns.get(i));
+                int position = query.getColumns() == null ? i : table.columnPosition(query.getColumns().get(i));
                 row[position] = columns.get(position).convert(values.get(i));
             }
             Object key = row[table.getKeyPosition()];
@@ -93,15 +93,15 @@ public class Executor {
     }
 
     private String update(Query query) {
-        Table table = db.getTable(query.table);
-        int[] positions = new int[query.columns.size()];
+        Table table = db.getTable(query.getTable());
+        int[] positions = new int[query.getColumns().size()];
         Object[] values = new Object[positions.length];
         for (int i = 0; i < positions.length; i++) {
-            positions[i] = table.columnPosition(query.columns.get(i));
+            positions[i] = table.columnPosition(query.getColumns().get(i));
             if (positions[i] == table.getKeyPosition()) {
                 throw new IllegalArgumentException("Первичный ключ нельзя изменить");
             }
-            values[i] = table.getColumns().get(positions[i]).convert(query.newValues.get(i));
+            values[i] = table.getColumns().get(positions[i]).convert(query.getNewValues().get(i));
         }
 
         List<Object[]> oldRows = table.find(query);
@@ -123,7 +123,7 @@ public class Executor {
     }
 
     private String delete(Query query) {
-        Table table = db.getTable(query.table);
+        Table table = db.getTable(query.getTable());
         List<Object[]> rows = table.find(query);
         for (Object[] row : rows) {
             checkNotReferenced(table, row);
@@ -136,12 +136,12 @@ public class Executor {
     }
 
     private String createTable(Query query) {
-        if (db.hasTable(query.table)) {
-            throw new IllegalArgumentException("Таблица '" + query.table + "' уже существует");
+        if (db.hasTable(query.getTable())) {
+            throw new IllegalArgumentException("Таблица '" + query.getTable() + "' уже существует");
         }
         int primaryKeys = 0;
         Set<String> names = new HashSet<>();
-        for (Column column : query.newColumns) {
+        for (Column column : query.getNewColumns()) {
             if (!names.add(column.getName())) {
                 throw new IllegalArgumentException("Столбец '" + column.getName() + "' повторяется");
             }
@@ -159,41 +159,41 @@ public class Executor {
         if (primaryKeys != 1) {
             throw new IllegalArgumentException("В таблице должен быть ровно один столбец PRIMARY KEY");
         }
-        db.addTable(new Table(query.table, query.newColumns));
-        return "Таблица '" + query.table + "' создана";
+        db.addTable(new Table(query.getTable(), query.getNewColumns()));
+        return "Таблица '" + query.getTable() + "' создана";
     }
 
     private String dropTable(Query query) {
-        if (query.ifExists && !db.hasTable(query.table)) {
-            return "Таблицы '" + query.table + "' нет, пропущено";
+        if (query.isIfExists() && !db.hasTable(query.getTable())) {
+            return "Таблицы '" + query.getTable() + "' нет, пропущено";
         }
-        db.getTable(query.table);
+        db.getTable(query.getTable());
         for (Table other : db.getTables()) {
             for (Column column : other.getColumns()) {
-                if (query.table.equals(column.getRefTable())) {
+                if (query.getTable().equals(column.getRefTable())) {
                     throw new IllegalArgumentException("На таблицу ссылается столбец " + other.getName() + "." + column.getName());
                 }
             }
         }
-        db.removeTable(query.table);
-        return "Таблица '" + query.table + "' удалена";
+        db.removeTable(query.getTable());
+        return "Таблица '" + query.getTable() + "' удалена";
     }
 
     private String createIndex(Query query) {
-        Table table = db.getTable(query.table);
+        Table table = db.getTable(query.getTable());
         for (Table other : db.getTables()) {
             for (Index index : other.getIndexes().values()) {
-                if (index.getName().equals(query.indexName)) {
-                    throw new IllegalArgumentException("Индекс '" + query.indexName + "' уже существует");
+                if (index.getName().equals(query.getIndexName())) {
+                    throw new IllegalArgumentException("Индекс '" + query.getIndexName() + "' уже существует");
                 }
             }
         }
-        if (table.getIndexes().containsKey(query.indexColumn)) {
-            throw new IllegalArgumentException("У столбца '" + query.indexColumn + "' уже есть индекс");
+        if (table.getIndexes().containsKey(query.getIndexColumn())) {
+            throw new IllegalArgumentException("У столбца '" + query.getIndexColumn() + "' уже есть индекс");
         }
-        table.createIndex(query.indexName, query.indexColumn);
+        table.createIndex(query.getIndexName(), query.getIndexColumn());
         db.save(table);
-        return "Индекс '" + query.indexName + "' создан";
+        return "Индекс '" + query.getIndexName() + "' создан";
     }
 
     private void checkForeignKeys(Table table, Object[] row) {

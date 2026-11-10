@@ -36,7 +36,8 @@ public class Main {
             if (line.equalsIgnoreCase("exit") || line.equalsIgnoreCase("выход")) {
                 break;
             }
-            if (line.isEmpty() || line.startsWith("--")) {
+            line = removeComment(line);
+            if (line.isEmpty()) {
                 continue;
             }
             buffer.append(line).append(' ');
@@ -57,6 +58,20 @@ public class Main {
             }
         }
         reader.close();
+    }
+
+    /** Убирает комментарий "--" до конца строки, если он стоит не внутри строки в кавычках */
+    private static String removeComment(String line) {
+        boolean inString = false;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '\'') {
+                inString = !inString;
+            } else if (!inString && line.startsWith("--", i)) {
+                return line.substring(0, i).trim();
+            }
+        }
+        return line;
     }
 
     private static void runQuery(Executor executor, String sql) {

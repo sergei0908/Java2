@@ -122,12 +122,12 @@ public class Table implements Iterable<Object[]>, Serializable {
     /** Находит строки, подходящие под условие WHERE */
     public List<Object[]> find(Query query) {
         List<Object[]> result = new ArrayList<>();
-        if (query.whereColumn == null) {
+        if (query.getWhereColumn() == null) {
             result.addAll(rows.values());
             return result;
         }
-        int position = columnPosition(query.whereColumn);
-        Object value = columns.get(position).convert(query.whereValue);
+        int position = columnPosition(query.getWhereColumn());
+        Object value = columns.get(position).convert(query.getWhereValue());
         if (value == null) {
             return result;
         }
@@ -138,12 +138,12 @@ public class Table implements Iterable<Object[]>, Serializable {
                 result.add(row);
             }
         } else if (method.startsWith("индекс")) {
-            for (Object key : indexes.get(query.whereColumn).find(query.whereOperator, value)) {
+            for (Object key : indexes.get(query.getWhereColumn()).find(query.getWhereOperator(), value)) {
                 result.add(rows.get(key));
             }
         } else {
             for (Object[] row : this) {
-                if (row[position] != null && matches(compare(row[position], value), query.whereOperator)) {
+                if (row[position] != null && matches(compare(row[position], value), query.getWhereOperator())) {
                     result.add(row);
                 }
             }
@@ -153,14 +153,14 @@ public class Table implements Iterable<Object[]>, Serializable {
 
     /** Возвращает способ поиска: первичный ключ, индекс или полный просмотр */
     public String searchMethod(Query query) {
-        if (query.whereColumn == null) {
+        if (query.getWhereColumn() == null) {
             return "полный просмотр";
         }
-        if (query.whereOperator.equals("=") && query.whereColumn.equals(getPrimaryKey().getName())) {
+        if (query.getWhereOperator().equals("=") && query.getWhereColumn().equals(getPrimaryKey().getName())) {
             return "первичный ключ";
         }
-        if (indexes.containsKey(query.whereColumn) && !query.whereOperator.equals("!=")) {
-            return "индекс " + indexes.get(query.whereColumn).getName();
+        if (indexes.containsKey(query.getWhereColumn()) && !query.getWhereOperator().equals("!=")) {
+            return "индекс " + indexes.get(query.getWhereColumn()).getName();
         }
         return "полный просмотр";
     }

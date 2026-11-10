@@ -121,13 +121,16 @@ erDiagram
 
 ## Инструкция пользователя
 
-**Как запустить.** Откройте проект в IntelliJ IDEA и выберите вверху:
+**Как запустить.** Нужен JDK 8 или новее. Если `javac` нет в `PATH`, укажите путь к JDK в переменной `JAVA_HOME`.
 
-* **Main** — консоль, где вы сами пишете команды;
-* **Main tests.sql** — выполнить все проверки из файла [tests.sql](tests.sql);
-* **Benchmark** — замер скорости.
+* `build.bat` — собрать программу;
+* `run.bat` — консоль, где вы сами пишете команды;
+* `run.bat tests.sql` — выполнить все проверки из файла [tests.sql](tests.sql);
+* `java -cp out Benchmark` — замер скорости.
 
-Без IntelliJ: `build.bat` собирает программу, `run.bat` запускает её.
+В IntelliJ IDEA: пометьте папку `src` как Sources Root (правый клик → Mark Directory as → Sources Root) и запустите
+класс `Main`. Чтобы выполнить проверки, в настройках запуска (Run → Edit Configurations) укажите в Program arguments
+`tests.sql`, а в Working directory — папку проекта.
 
 **Как писать команды.** Каждая команда заканчивается точкой с запятой `;`. Строки пишутся в одинарных
 кавычках, даты — в виде `'2024-05-01'`. Выход из программы — `exit` или `выход`.
@@ -173,7 +176,7 @@ gym> DELETE FROM trainers WHERE id = 1;
 
 ## Архитектура системы
 
-Программа состоит из 9 классов:
+Программа состоит из 10 классов:
 
 | Класс | Что делает |
 |---|---|
@@ -181,7 +184,8 @@ gym> DELETE FROM trainers WHERE id = 1;
 | `Parser` | Разбирает текст команды на части |
 | `Query` | Хранит разобранную команду |
 | `Executor` | Выполняет команду и рисует таблицу с результатом |
-| `Database` | Хранит все таблицы, сохраняет их в файлы и загружает обратно |
+| `Database` | Хранит все таблицы и выдаёт их остальному коду |
+| `TableDao` | Сохраняет таблицы в файлы, загружает их обратно и исправляет последствия сбоя |
 | `Table` | Хранит строки таблицы и её индексы, ищет нужные строки |
 | `Column` | Описывает столбец и проверяет, подходит ли значение по типу |
 | `Index` | Индекс для быстрого поиска |
@@ -189,7 +193,8 @@ gym> DELETE FROM trainers WHERE id = 1;
 
 Паттерны проектирования:
 
-* **Repository** и **DAO** — класс `Database`. Остальной код просит у него таблицы и не знает, как они лежат в файлах.
+* **Repository** — класс `Database`. Остальной код просит у него таблицы, как у обычной коллекции.
+* **DAO** — класс `TableDao`. Вся работа с файлами собрана в нём, поэтому остальной код не знает, как таблицы лежат на диске.
 * **Iterator** — класс `Table`. Строки таблицы можно перебрать обычным циклом `for (Object[] row : table)`.
 
 ### Диаграмма классов
@@ -219,6 +224,11 @@ classDiagram
         +removeTable(name)
         +save(table)
     }
+    class TableDao {
+        +loadAll() List
+        +save(table)
+        +delete(name)
+    }
     class Table {
         +insert(row)
         +update(oldRow, newRow)
@@ -239,6 +249,7 @@ classDiagram
     Executor --> Parser
     Executor --> Database
     Parser ..> Query : создаёт
+    Database --> TableDao
     Database "1" o-- "*" Table
     Table "1" *-- "*" Column
     Table "1" *-- "*" Index
@@ -279,6 +290,7 @@ sequenceDiagram
     participant T as Table
     participant I as Index
     participant D as Database
+    participant F as TableDao
 
     E->>E: проверить типы значений
     E->>E: проверить первичный ключ и ссылки
@@ -286,9 +298,10 @@ sequenceDiagram
     E->>T: insert(row)
     T->>I: add(value, key)
     E->>D: save(table)
-    D->>D: записать clients.tmp
-    D->>D: удалить clients.tbl
-    D->>D: переименовать clients.tmp в clients.tbl
+    D->>F: save(table)
+    F->>F: записать clients.tmp
+    F->>F: удалить clients.tbl
+    F->>F: переименовать clients.tmp в clients.tbl
 ```
 
 ### Как данные хранятся на диске
@@ -373,7 +386,7 @@ sequenceDiagram
 | Участник | Что делал |
 |---|---|
 | Лебедев Сергей Александрович, 25КНТ-6 | `Parser`, `Query`, `Executor`, `Main`: разбор и выполнение команд, консоль |
-| Копейкин Александр Александрович, 25КНТ-6 | `Database`, `Table`, `Column`, `Index`, `Benchmark`: хранение, индексы, замеры, readme |
+| Копейкин Александр Александрович, 25КНТ-6 | `Database`, `TableDao`, `Table`, `Column`, `Index`, `Benchmark`: хранение, индексы, замеры, readme |
 
 ## Выводы
 

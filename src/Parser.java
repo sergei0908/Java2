@@ -101,10 +101,10 @@ public class Parser {
     private Query parseSelect() {
         Query query = new Query("SELECT");
         if (!accept("*")) {
-            query.columns = parseNameList();
+            query.setColumns(parseNameList());
         }
         expect("FROM");
-        query.table = parseName();
+        query.setTable(parseName());
         parseWhere(query);
         return query;
     }
@@ -112,9 +112,9 @@ public class Parser {
     private Query parseInsert() {
         Query query = new Query("INSERT");
         expect("INTO");
-        query.table = parseName();
+        query.setTable(parseName());
         if (accept("(")) {
-            query.columns = parseNameList();
+            query.setColumns(parseNameList());
             expect(")");
         }
         expect("VALUES");
@@ -125,20 +125,20 @@ public class Parser {
                 values.add(parseValue());
             } while (accept(","));
             expect(")");
-            query.rows.add(values);
+            query.getRows().add(values);
         } while (accept(","));
         return query;
     }
 
     private Query parseUpdate() {
         Query query = new Query("UPDATE");
-        query.table = parseName();
+        query.setTable(parseName());
         expect("SET");
-        query.columns = new ArrayList<>();
+        query.setColumns(new ArrayList<>());
         do {
-            query.columns.add(parseName());
+            query.getColumns().add(parseName());
             expect("=");
-            query.newValues.add(parseValue());
+            query.getNewValues().add(parseValue());
         } while (accept(","));
         parseWhere(query);
         return query;
@@ -147,14 +147,14 @@ public class Parser {
     private Query parseDelete() {
         Query query = new Query("DELETE");
         expect("FROM");
-        query.table = parseName();
+        query.setTable(parseName());
         parseWhere(query);
         return query;
     }
 
     private Query parseCreateTable() {
         Query query = new Query("CREATE TABLE");
-        query.table = parseName();
+        query.setTable(parseName());
         expect("(");
         do {
             String name = parseName();
@@ -175,7 +175,7 @@ public class Parser {
                 refColumn = parseName();
                 expect(")");
             }
-            query.newColumns.add(new Column(name, type, primaryKey, refTable, refColumn));
+            query.getNewColumns().add(new Column(name, type, primaryKey, refTable, refColumn));
         } while (accept(","));
         expect(")");
         return query;
@@ -185,19 +185,19 @@ public class Parser {
         Query query = new Query("DROP TABLE");
         if (accept("IF")) {
             expect("EXISTS");
-            query.ifExists = true;
+            query.setIfExists(true);
         }
-        query.table = parseName();
+        query.setTable(parseName());
         return query;
     }
 
     private Query parseCreateIndex() {
         Query query = new Query("CREATE INDEX");
-        query.indexName = parseName();
+        query.setIndexName(parseName());
         expect("ON");
-        query.table = parseName();
+        query.setTable(parseName());
         expect("(");
-        query.indexColumn = parseName();
+        query.setIndexColumn(parseName());
         expect(")");
         return query;
     }
@@ -206,7 +206,7 @@ public class Parser {
         if (!accept("WHERE")) {
             return;
         }
-        query.whereColumn = parseName();
+        String column = parseName();
         String operator = next();
         if (operator.equals("<>")) {
             operator = "!=";
@@ -214,8 +214,7 @@ public class Parser {
         if (!Arrays.asList("=", "!=", "<", "<=", ">", ">=").contains(operator)) {
             throw new IllegalArgumentException("Неизвестный оператор: " + operator);
         }
-        query.whereOperator = operator;
-        query.whereValue = parseValue();
+        query.setWhere(column, operator, parseValue());
     }
 
     private List<String> parseNameList() {
