@@ -1,7 +1,7 @@
 import java.util.ArrayList;
 import java.util.List;
 
-/** Разобранный запрос. */
+/** Разобранный запрос */
 public class Query {
     final String command;
     String table;
@@ -16,6 +16,7 @@ public class Query {
     String whereOperator;
     Object whereValue;
 
+    /** Создаёт пустой запрос с указанной командой */
     public Query(String command) {
         this.command = command;
     }

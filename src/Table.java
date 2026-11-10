@@ -7,16 +7,22 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Таблица: столбцы, строки и индексы. */
+/** Таблица: столбцы, строки и индексы */
 public class Table implements Iterable<Object[]>, Serializable {
     private static final long serialVersionUID = 1L;
 
+    /** Имя таблицы */
     private final String name;
+    /** Столбцы таблицы */
     private final List<Column> columns;
+    /** Номер столбца с первичным ключом */
     private final int keyPosition;
+    /** Строки таблицы по значению первичного ключа */
     private final Map<Object, Object[]> rows = new LinkedHashMap<>();
+    /** Индексы таблицы: имя столбца и индекс по нему */
     private final Map<String, Index> indexes = new HashMap<>();
 
+    /** Создаёт пустую таблицу с указанными столбцами */
     public Table(String name, List<Column> columns) {
         this.name = name;
         this.columns = columns;
@@ -29,30 +35,37 @@ public class Table implements Iterable<Object[]>, Serializable {
         this.keyPosition = position;
     }
 
+    /** Возвращает имя таблицы */
     public String getName() {
         return name;
     }
 
+    /** Возвращает столбцы таблицы */
     public List<Column> getColumns() {
         return columns;
     }
 
+    /** Возвращает столбец первичного ключа */
     public Column getPrimaryKey() {
         return columns.get(keyPosition);
     }
 
+    /** Возвращает номер столбца первичного ключа */
     public int getKeyPosition() {
         return keyPosition;
     }
 
+    /** Возвращает индексы таблицы */
     public Map<String, Index> getIndexes() {
         return indexes;
     }
 
+    /** Проверяет, есть ли строка с таким первичным ключом */
     public boolean hasKey(Object key) {
         return rows.containsKey(key);
     }
 
+    /** Возвращает номер столбца по имени */
     public int columnPosition(String columnName) {
         for (int i = 0; i < columns.size(); i++) {
             if (columns.get(i).getName().equals(columnName)) {
@@ -62,10 +75,12 @@ public class Table implements Iterable<Object[]>, Serializable {
         throw new IllegalArgumentException("Нет столбца '" + columnName + "' в таблице '" + name + "'");
     }
 
+    /** Возвращает итератор по строкам таблицы */
     public Iterator<Object[]> iterator() {
         return rows.values().iterator();
     }
 
+    /** Добавляет строку и обновляет индексы */
     public void insert(Object[] row) {
         Object key = row[keyPosition];
         rows.put(key, row);
@@ -74,6 +89,7 @@ public class Table implements Iterable<Object[]>, Serializable {
         }
     }
 
+    /** Заменяет старую версию строки новой и обновляет индексы */
     public void update(Object[] oldRow, Object[] newRow) {
         Object key = oldRow[keyPosition];
         rows.put(key, newRow);
@@ -84,6 +100,7 @@ public class Table implements Iterable<Object[]>, Serializable {
         }
     }
 
+    /** Удаляет строку и её записи в индексах */
     public void delete(Object[] row) {
         Object key = row[keyPosition];
         rows.remove(key);
@@ -92,6 +109,7 @@ public class Table implements Iterable<Object[]>, Serializable {
         }
     }
 
+    /** Создаёт индекс по столбцу и заполняет его существующими строками */
     public void createIndex(String indexName, String columnName) {
         int position = columnPosition(columnName);
         Index index = new Index(indexName);
@@ -101,6 +119,7 @@ public class Table implements Iterable<Object[]>, Serializable {
         indexes.put(columnName, index);
     }
 
+    /** Находит строки, подходящие под условие WHERE */
     public List<Object[]> find(Query query) {
         List<Object[]> result = new ArrayList<>();
         if (query.whereColumn == null) {
@@ -132,6 +151,7 @@ public class Table implements Iterable<Object[]>, Serializable {
         return result;
     }
 
+    /** Возвращает способ поиска: первичный ключ, индекс или полный просмотр */
     public String searchMethod(Query query) {
         if (query.whereColumn == null) {
             return "полный просмотр";

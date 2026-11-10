@@ -2,7 +2,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-/** Разбор текста SQL-запроса в объект Query. */
+/** Разбор текста SQL-запроса в объект Query */
 public class Parser {
     private final List<String> tokens;
     private int position = 0;
@@ -11,6 +11,7 @@ public class Parser {
         this.tokens = tokens;
     }
 
+    /** Разбирает текст запроса и возвращает объект Query */
     public static Query parse(String sql) {
         Parser parser = new Parser(tokenize(sql));
         Query query = parser.parseCommand();

@@ -10,11 +10,12 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
-/** База данных: все таблицы и их хранение в файлах. */
+/** База данных: все таблицы и их хранение в файлах */
 public class Database {
     private final File folder;
     private final Map<String, Table> tables = new HashMap<>();
 
+    /** Открывает базу в указанной папке и загружает все таблицы */
     public Database(File folder) {
         this.folder = folder;
         folder.mkdirs();
@@ -29,10 +30,12 @@ public class Database {
         }
     }
 
+    /** Проверяет, есть ли таблица с таким именем */
     public boolean hasTable(String name) {
         return tables.containsKey(name);
     }
 
+    /** Возвращает таблицу по имени, если её нет — выбрасывает ошибку */
     public Table getTable(String name) {
         Table table = tables.get(name);
         if (table == null) {
@@ -41,20 +44,24 @@ public class Database {
         return table;
     }
 
+    /** Возвращает все таблицы базы */
     public Collection<Table> getTables() {
         return tables.values();
     }
 
+    /** Сохраняет новую таблицу на диск и добавляет её в базу */
     public void addTable(Table table) {
         save(table);
         tables.put(table.getName(), table);
     }
 
+    /** Удаляет таблицу из базы и её файл с диска */
     public void removeTable(String name) {
         tables.remove(name);
         new File(folder, name + ".tbl").delete();
     }
 
+    /** Сохраняет таблицу в файл через временный файл */
     public void save(Table table) {
         folder.mkdirs();
         File temp = new File(folder, table.getName() + ".tmp");

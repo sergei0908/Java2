@@ -3,14 +3,16 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** Выполнение запросов и вывод результата в виде таблицы. */
+/** Выполнение запросов и вывод результата в виде таблицы */
 public class Executor {
     private final Database db;
 
+    /** Создаёт исполнитель запросов для базы данных */
     public Executor(Database db) {
         this.db = db;
     }
 
+    /** Выполняет запрос и возвращает ответ в виде текста */
     public String run(String sql) {
         Query query = Parser.parse(sql);
         switch (query.command) {

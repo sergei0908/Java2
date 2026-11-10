@@ -4,21 +4,26 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
-/** Индекс по одному столбцу таблицы на основе TreeMap. */
+/** Индекс по одному столбцу таблицы на основе TreeMap */
 public class Index implements Serializable {
     private static final long serialVersionUID = 1L;
 
+    /** Имя индекса */
     private final String name;
+    /** Значения столбца по порядку и первичные ключи строк с этими значениями */
     private final TreeMap<Object, List<Object>> map = new TreeMap<>();
 
+    /** Создаёт пустой индекс */
     public Index(String name) {
         this.name = name;
     }
 
+    /** Возвращает имя индекса */
     public String getName() {
         return name;
     }
 
+    /** Добавляет строку в индекс */
     public void add(Object value, Object primaryKey) {
         if (value == null) {
             return;
@@ -31,6 +36,7 @@ public class Index implements Serializable {
         keys.add(primaryKey);
     }
 
+    /** Удаляет строку из индекса */
     public void remove(Object value, Object primaryKey) {
         if (value == null) {
             return;
@@ -42,6 +48,7 @@ public class Index implements Serializable {
         }
     }
 
+    /** Возвращает первичные ключи строк, подходящих под условие */
     public List<Object> find(String operator, Object value) {
         Map<Object, List<Object>> part;
         switch (operator) {

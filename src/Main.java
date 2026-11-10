@@ -4,10 +4,11 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 
-/** Консоль базы данных тренажёрного зала. */
+/** Консоль базы данных тренажёрного зала */
 public class Main {
     private static final char BOM = 0xFEFF;
 
+    /** Запускает консоль или выполняет запросы из файла, если он указан */
     public static void main(String[] args) throws IOException {
         Executor executor = new Executor(new Database(new File("data")));
         boolean fromFile = args.length > 0;

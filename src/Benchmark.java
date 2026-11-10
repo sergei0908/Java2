@@ -4,7 +4,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 
-/** Замер скорости поиска с индексом и без. */
+/** Замер скорости поиска с индексом и без */
 public class Benchmark {
     private static final String[] QUERIES = {
             "SELECT * FROM visits WHERE exercise = 'ex_500';",
@@ -13,6 +13,7 @@ public class Benchmark {
             "SELECT * FROM visits WHERE weight < 200;",
     };
 
+    /** Запускает замеры на 10 тысячах, 100 тысячах и миллионе строк */
     public static void main(String[] args) {
         for (int rowCount : new int[]{10000, 100000, 1000000}) {
             runTest(rowCount);
