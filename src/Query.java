@@ -1,7 +1,7 @@
 import java.util.ArrayList;
 import java.util.List;
 
-/** Разобранный запрос. Parser заполняет только те поля, которые нужны команде */
+/** Разобранный запрос */
 public class Query {
     private final String command;
     private String table;

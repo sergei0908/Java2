@@ -11,9 +11,7 @@ import java.util.Map;
 public class Table implements Iterable<Object[]>, Serializable {
     private static final long serialVersionUID = 1L;
 
-    /** Имя таблицы */
     private final String name;
-    /** Столбцы таблицы */
     private final List<Column> columns;
     /** Номер столбца с первичным ключом */
     private final int keyPosition;

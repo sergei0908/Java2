@@ -8,7 +8,6 @@ import java.util.TreeMap;
 public class Index implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    /** Имя индекса */
     private final String name;
     /** Значения столбца по порядку и первичные ключи строк с этими значениями */
     private final TreeMap<Object, List<Object>> map = new TreeMap<>();

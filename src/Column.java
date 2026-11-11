@@ -11,11 +11,8 @@ public class Column implements Serializable {
     /** Типы данных, которые можно использовать в столбцах */
     public static final List<String> TYPES = Arrays.asList("INT", "DOUBLE", "STRING", "DATE", "BOOLEAN");
 
-    /** Имя столбца */
     private final String name;
-    /** Тип столбца */
     private final String type;
-    /** Является ли столбец первичным ключом */
     private final boolean primaryKey;
     /** Таблица, на которую ссылается столбец, или null */
     private final String refTable;

@@ -9,9 +9,8 @@ import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Паттерн DAO: сохранение таблиц в файлы и загрузка их обратно. Остальной код с файлами не работает */
+/** Сохранение таблиц в файлы и загрузка их обратно */
 public class TableDao {
-    /** Папка, где лежат файлы таблиц */
     private final File folder;
 
     /** Создаёт DAO для указанной папки и создаёт её, если её нет */

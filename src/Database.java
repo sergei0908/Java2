@@ -3,7 +3,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Паттерн Repository: все таблицы базы. Сохранять их на диск просит TableDao */
+/** Все таблицы базы данных */
 public class Database {
     private final TableDao dao;
     private final Map<String, Table> tables = new HashMap<>();
