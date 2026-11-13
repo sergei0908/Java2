@@ -18,6 +18,40 @@
 Нельзя добавить клиента к несуществующему тренеру и нельзя удалить тренера, у которого есть клиенты.
 Для программ и клиентов действуют те же правила.
 
+Схема связей (ER-диаграмма). Её, как и остальные диаграммы в отчёте, мы разбирали на курсе «Управление данными».
+
+```mermaid
+erDiagram
+    trainers ||--o{ clients : "ведёт"
+    clients ||--o{ programs : "занимается по"
+    trainers {
+        INT id PK
+        STRING name
+        STRING specialization
+        DOUBLE rating
+        DATE hired
+        BOOLEAN certified
+    }
+    clients {
+        INT id PK
+        INT trainer_id FK
+        STRING name
+        DOUBLE weight
+        DATE joined
+        BOOLEAN active
+    }
+    programs {
+        INT id PK
+        INT client_id FK
+        STRING title
+        STRING goal
+        DATE start_date
+        INT weeks
+        DOUBLE price
+        BOOLEAN finished
+    }
+```
+
 ## Возможности
 
 * Типы данных: `INT`, `DOUBLE`, `STRING`, `DATE` (`'2024-05-01'`), `BOOLEAN` (`TRUE`/`FALSE`).
@@ -167,7 +201,7 @@ sequenceDiagram
 ## Источники
 
 1. Лекции курса «Программирование на языке Java».
-2. Лекции курса «Управление данными»: диаграммы классов и последовательностей.
+2. Лекции курса «Управление данными»: ER-диаграммы, диаграммы классов и последовательностей.
 3. Java SE 8 API Documentation. — https://docs.oracle.com/javase/8/docs/api/
 4. Java Object Serialization Specification. — https://docs.oracle.com/javase/8/docs/platform/serialization/spec/serialTOC.html
 5. Кормен Т. и др. Алгоритмы: построение и анализ. — Глава 13 «Красно-чёрные деревья».
