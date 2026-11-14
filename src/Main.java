@@ -18,7 +18,7 @@ public class Main {
             reader = new BufferedReader(new InputStreamReader(new FileInputStream(args[0]), "UTF-8"));
         } else {
             reader = new BufferedReader(new InputStreamReader(System.in));
-            System.out.println("GymDB. Каждый запрос заканчивается ';'. Для выхода введите exit или выход.");
+            System.out.println("GymDB. Каждый запрос заканчивается ';'. Для выхода введите exit или выход");
         }
 
         StringBuilder buffer = new StringBuilder();
